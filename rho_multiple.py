@@ -511,11 +511,11 @@ plt.figure(figsize = (8,5))
 plt.plot(wi_z, w0)
 plt.plot(wi_z, w1)
 plt.plot(wi_z, w2)
-#plt.plot(wi_z, w3)
+plt.plot(wi_z, w3)
 plt.plot(wi_z, w4)
 plt.plot(wi_z, w5)
 plt.xlim([0,4.5])
-plt.legend(['DESI','WISE','LSST','DES','WISE x SCOS'])
+plt.legend(['DESI','WISE','LSST','CIB','DES','WISE x SCOS'])
 plt.savefig('weight.png')
 
 #ls = np.arange(102,1000-1,10, dtype=np.float64)
@@ -611,6 +611,8 @@ for i, li in enumerate(ls):
     cii5[i] = C_ii(li,'DES')     
     cii6[i] = C_ii(li, 'WISE x SCOS')
     c53[i] = C_ij(li, 'DES', 'CIB')
+    c23[i] = C_ij(li, 'LSST', 'CIB')
+    c34[i] = cki3[i]
     c24[i] = cki2[i]
     rho_spt[i] = ckk[i] / cii4[i]
     rho_c23[i] = cross_rho3(li, cii2[i], c23[i], c23[i], cii3[i], cki2[i], cki3[i])    #    rho_c23[i] = cross_rho(li, 'LSST', 'CIB')
