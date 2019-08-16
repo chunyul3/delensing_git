@@ -8,6 +8,7 @@ import pandas as pd
 import math
 import scipy.integrate as integrate
 from scipy.integrate import quad
+from scipy import special
 import scipy.special as special
 import camb
 from camb import model, initialpower
@@ -155,8 +156,9 @@ def matrix_cii(l, c11, c12, c21, c22):
     a = np.matrix(a0)
     return a 
 
-def cross_rho3(l, c11, c12, c21, c22, ck1, ck2):
+def cross_rho2(l, c11, c12, c21, c22, ck1, ck2):
     a = matrix_cii(l, c11, c12, c21, c22)
+#    print a
     b = a.I
     kk = C_kk(l, 'spt')
     r11 = ck1**2 * b[0,0]
@@ -164,6 +166,19 @@ def cross_rho3(l, c11, c12, c21, c22, ck1, ck2):
     r22 = ck2**2 * b[1,1]
     rho = (r11 + r12 * 2 + r22) / kk
     rho = rho**0.5
+    return rho
+
+def cross_rho3(l, ckk, c11, c12, c13, c22, c23, c33, ck1, ck2, ck3):
+    c21 = c12; c31 = c13; c32 = c23
+    a = [[c11,c12,c13],[c21,c22,c23],[c31,c32,c33]]
+    a = np.matrix(a)
+    b = a.I
+    v1 = np.array([[ck1, ck2, ck3]])
+    v2 = v1.T
+    rho = v1 * b * v2
+    if len(rho) == 1:
+        rho = float(rho)
+    rho = (rho / ckk)**0.5
     return rho
 
 def cross_cii(l, suvy1, suvy2):
@@ -226,7 +241,8 @@ def cross_rho(l, suvy1, suvy2):
 def C_ii(l,suvy):
     k = (l + 0.5)/chis
     if suvy == 'CIB_pln':
-        return 3500**1 * (l/3000) ** (-1.25)
+        a = 3500 * (l/3000.0) ** (-1.25)
+        return a
     elif suvy == 'spt':
         if l > 100 and l < 1000:
             a = spt_itp_sg(l) + spt_itp_ns(l)
@@ -294,7 +310,12 @@ def b(z, suvy):
     else:
         b = 1.41
     return b
-    
+
+def W_tmg(z, suvy):
+    if suvy == 'LSST':
+        wg = np.zeros((10, len(z)))
+        for i in range(10):
+            wg[i,:] = b(z, suvy) * dn_dz(z, suvy) * special.erf()
     
 def Wi(z, suvy):
     if suvy == 'WISE':
@@ -317,8 +338,7 @@ def Wi(z, suvy):
         a = sum(wcib)
         Imu = 1.4/3*10**6
         wcib = wcib/a*Imu
-        amax = max(wcib)
-        wcib /= amax
+        wcib = wcib * 21.088
         return wcib    
     elif suvy =='CIB_2':
         A = 0.289; z0 = 1.34; alpha = 1.30; 
@@ -473,7 +493,6 @@ def noise_eb(lx ,ly):
 
 def Ct(l):
     if l < 6100:
-#        print 'l', l
         a = ct_itp(l)
     else:
         a = 0
@@ -525,8 +544,9 @@ ls = np.asarray(ls)
 
 rho0 = np.zeros(ls.shape) 
 rho1 = np.zeros(ls.shape) 
-rho3 = np.zeros(ls.shape) 
 rho2 = np.zeros(ls.shape) 
+rho3 = np.zeros(ls.shape) 
+rho_spt = np.zeros(ls.shape)
 rho5 = np.zeros(ls.shape) 
 rho6 = np.zeros(ls.shape) 
 ckk = np.zeros(ls.shape) 
@@ -545,18 +565,60 @@ cii3 = np.zeros(ls.shape)
 cii4 = np.zeros(ls.shape) 
 cii5 = np.zeros(ls.shape) 
 cii6 = np.zeros(ls.shape) 
-c53 = np.zeros(ls.shape) 
+c12 = np.zeros(ls.shape) 
+c13 = np.zeros(ls.shape) 
+c14 = np.zeros(ls.shape) 
+c15 = np.zeros(ls.shape) 
+c16 = np.zeros(ls.shape) 
 c23 = np.zeros(ls.shape) 
-c34 = np.zeros(ls.shape) 
 c24 = np.zeros(ls.shape) 
+c25 = np.zeros(ls.shape) 
+c26 = np.zeros(ls.shape) 
+c34 = np.zeros(ls.shape) 
+c35 = np.zeros(ls.shape) 
+c36 = np.zeros(ls.shape) 
+c45 = np.zeros(ls.shape) 
+c46 = np.zeros(ls.shape) 
 c56 = np.zeros(ls.shape) 
-rho_c03 = np.zeros(ls.shape) 
-rho_c24 = np.zeros(ls.shape) 
-rho_c53 = np.zeros(ls.shape) 
+c12 = np.zeros(ls.shape) 
+c13 = np.zeros(ls.shape) 
+c14 = np.zeros(ls.shape) 
+c15 = np.zeros(ls.shape) 
+c16 = np.zeros(ls.shape) 
+c23 = np.zeros(ls.shape) 
+c24 = np.zeros(ls.shape) 
+c25 = np.zeros(ls.shape) 
+c26 = np.zeros(ls.shape) 
+c34 = np.zeros(ls.shape) 
+c35 = np.zeros(ls.shape) 
+c36 = np.zeros(ls.shape) 
+c45 = np.zeros(ls.shape) 
+c46 = np.zeros(ls.shape) 
+
+
+rho_c12 = np.zeros(ls.shape) 
+rho_c13 = np.zeros(ls.shape) 
+rho_c14 = np.zeros(ls.shape) 
+rho_c15 = np.zeros(ls.shape) 
+rho_c16 = np.zeros(ls.shape) 
 rho_c23 = np.zeros(ls.shape) 
+rho_c24 = np.zeros(ls.shape) 
+rho_c25 = np.zeros(ls.shape) 
+rho_c26 = np.zeros(ls.shape) 
 rho_c34 = np.zeros(ls.shape) 
+rho_c35 = np.zeros(ls.shape) 
+rho_c36 = np.zeros(ls.shape) 
+rho_c45 = np.zeros(ls.shape) 
+rho_c46 = np.zeros(ls.shape) 
 rho_c56 = np.zeros(ls.shape) 
-rho_spt = np.zeros(ls.shape)
+rho_c01 = np.zeros(ls.shape) 
+rho_c02 = np.zeros(ls.shape) 
+rho_c03 = np.zeros(ls.shape) 
+rho_c04 = np.zeros(ls.shape) 
+rho_c05 = np.zeros(ls.shape) 
+
+rho_c135 = np.zeros(ls.shape) 
+
 spt_nst = np.zeros(ls.shape)
 spt_nse = np.zeros(ls.shape)
 spt_nsb = np.zeros(ls.shape)
@@ -577,13 +639,14 @@ for i, li in enumerate(ls):
     ckk[i] = C_kk(li,'CIB')
     al = li * np.cos(theta)
     bl = li * np.sin(theta)
-    spt_nst[i], spt_nse[i], spt_nsb[i], spt_nste[i], spt_nstb[i], spt_nseb[i] = spt_ns(al, bl)
+#    spt_nst[i], spt_nse[i], spt_nsb[i], spt_nste[i], spt_nstb[i], spt_nseb[i] = spt_ns(al, bl)
     spt_nst[i] = spt_nst[i] * li**2 * (li+1)**2/4
     spt_nse[i] = spt_nse[i] * li**2 * (li+1)**2/4
     spt_nseb[i] = spt_nseb[i] * li**2 * (li+1)**2/4
+    spt_nseb[i] = noise_eb(al, bl) * li**2 * (li+1)**2/4
     spt_nste[i] = spt_nste[i] * li**2 * (li+1)**2/4
     spt_nstb[i] = spt_nstb[i] * li**2 * (li+1)**2/4
-    spt_nsmv[i] = 1/(1/spt_nst[i] + 1/spt_nse[i] + 1/spt_nste[i] + 1/spt_nstb[i] + 1/spt_nseb[i])
+#    spt_nsmv[i] = 1/(1/spt_nst[i] + 1/spt_nse[i] + 1/spt_nste[i] + 1/spt_nstb[i] + 1/spt_nseb[i])
     print 't', spt_nst[i]
     print 'e', spt_nse[i]
     print 'b', spt_nsb[i]
@@ -606,20 +669,42 @@ for i, li in enumerate(ls):
     cii0[i] = C_ii(li,'DESI')     
     cii1[i] = C_ii(li,'WISE')     
     cii2[i] = C_ii(li,'LSST')     
-    cii3[i] = C_ii(li,'CIB')     
-    cii4[i] = ckk[i] + spt_nsmv[i]
+    cii3[i] = C_ii(li,'CIB_pln')     
+    cii4[i] = ckk[i] + spt_nseb[i]
     cii5[i] = C_ii(li,'DES')     
     cii6[i] = C_ii(li, 'WISE x SCOS')
-    c53[i] = C_ij(li, 'DES', 'CIB')
+    c12[i] = C_ij(li, 'WISE', 'LSST')    
+    c13[i] = C_ij(li, 'WISE', 'CIB')    
+    c14[i] = cki1[i]
+    c15[i] = C_ij(li, 'WISE', 'DES')    
+    c16[i] = C_ij(li, 'WISE', 'WISE x SCOS')    
     c23[i] = C_ij(li, 'LSST', 'CIB')
-    c34[i] = cki3[i]
     c24[i] = cki2[i]
+    c25[i] = C_ij(li, 'LSST', 'DES')
+    c26[i] = C_ij(li, 'LSST', 'WISE x SCOS')
+    c34[i] = cki3[i]
+    c35[i] = C_ij(li, 'CIB', 'DES')
+    c36[i] = C_ij(li, 'CIB', 'WISE x SCOS')
+    c45[i] = cki5[i]
+    c46[i] = cki6[i]
+    c56[i] = C_ij(li, 'DES', 'WISE x SCOS')
     rho_spt[i] = ckk[i] / cii4[i]
-    rho_c23[i] = cross_rho3(li, cii2[i], c23[i], c23[i], cii3[i], cki2[i], cki3[i])    #    rho_c23[i] = cross_rho(li, 'LSST', 'CIB')
-    rho_c53[i] = cross_rho3(li, cii5[i], c53[i], c53[i], cii3[i], cki5[i], cki3[i])    #    rho_c53[i] = cross_rho(li, 'DES', 'CIB')
-    rho_c24[i] = cross_rho3(li, cii2[i], c24[i], c24[i], cii4[i], cki2[i], ckk[i])     #    rho_c24[i] = cross_rho(li, 'LSST', 'spt')
-    rho_c34[i] = cross_rho3(li, cii3[i], c34[i], c34[i], cii4[i], cki3[i], ckk[i])     #    rho_c34[i] = cross_rho(li, 'CIB', 'spt')
-    rho_c56[i] = cross_rho3(li, cii5[i], c56[i], c56[i], cii6[i], cki5[i], cki6[i])     #    rho_c26[i] = cross_rho(li, 'DES', 'WISE x SCOS')
+    rho_c12[i] = cross_rho2(li, cii1[i], c12[i], c12[i], cii2[i], cki1[i], cki2[i])    
+    rho_c13[i] = cross_rho2(li, cii1[i], c13[i], c13[i], cii3[i], cki1[i], cki3[i])    
+    rho_c14[i] = cross_rho2(li, cii1[i], c14[i], c14[i], cii4[i], cki1[i], cki4[i])    
+    rho_c15[i] = cross_rho2(li, cii1[i], c15[i], c15[i], cii5[i], cki1[i], cki5[i])    
+    rho_c16[i] = cross_rho2(li, cii1[i], c16[i], c16[i], cii6[i], cki1[i], cki6[i])   
+    rho_c23[i] = cross_rho2(li, cii2[i], c23[i], c23[i], cii3[i], cki2[i], cki3[i])    #    rho_c23[i] = cross_rho(li, 'LSST', 'CIB')
+    rho_c24[i] = cross_rho2(li, cii2[i], c24[i], c24[i], cii4[i], cki2[i], cki4[i])    #    
+    rho_c25[i] = cross_rho2(li, cii2[i], c25[i], c25[i], cii5[i], cki2[i], cki5[i])    
+    rho_c26[i] = cross_rho2(li, cii2[i], c26[i], c26[i], cii6[i], cki2[i], cki6[i])    
+    rho_c34[i] = cross_rho2(li, cii3[i], c34[i], c34[i], cii4[i], cki3[i], cki4[i])    
+    rho_c35[i] = cross_rho2(li, cii3[i], c35[i], c35[i], cii5[i], cki3[i], cki5[i])     
+    rho_c36[i] = cross_rho2(li, cii3[i], c36[i], c36[i], cii6[i], cki3[i], cki6[i])     
+    rho_c45[i] = cross_rho2(li, cii4[i], c45[i], c45[i], cii5[i], cki4[i], cki5[i])     
+    rho_c46[i] = cross_rho2(li, cii4[i], c46[i], c46[i], cii6[i], cki4[i], cki6[i])     
+    rho_c56[i] = cross_rho2(li, cii5[i], c56[i], c56[i], cii6[i], cki5[i], cki6[i])     
+    rho_c135[i] = cross_rho3(li, ckk[i], cii1[i], c13[i], c15[i], cii3[i], c35[i], cii5[i], cki1[i], cki3[i], cki5[i])
     end = datetime.datetime.now()
     print (end-start)
 
@@ -635,11 +720,15 @@ data = np.column_stack((ls, rho0, rho1, rho2, rho3, rho_spt, rho_c03, rho_c24,sp
 header = "ls, DESI, WISE, LSST, CIB, rho_spt, DESI_CIB, LSST_SPT,spt_nst "
 np.savetxt('spt_lmax3k_fwhm1.dat', data, header=header)
 
+spteb = np.column_stack((ls, spt_nseb))
+header = "ls, spt_nseb"
+np.savetxt('spt_eb.dat', spteb, header=header)
+
 plt.rc('text', usetex=True)
 plt.rc('font', family='serif')
          
 plt.figure(figsize = (8,5))        
-#plt.plot(ls,rho0)
+plt.plot(ls,rho0)
 plt.plot(ls,rho1)
 plt.plot(ls,rho2)
 plt.plot(ls,rho3)
@@ -650,18 +739,38 @@ plt.xlim([1,ls[-1]])
 plt.ylim([0,1])
 plt.xlabel('l')
 plt.ylabel('rho')
-plt.legend(['WISE','LSST','CIB_{wi}','DES','WISE x SCOS','spt'])
-plt.savefig('rho_5muk_beam1_lm3k_mv_single.png')
+plt.legend(['DESI','WISE','LSST','CIB pln','DES','WISE x SCOS','spt'])
+plt.savefig('rho_5muk_beam1_lm3k_eb_single0.png')
 
 plt.figure(figsize = (8,5))        
-plt.plot(ls,rho_c53)
-plt.plot(ls,rho_c23)
-plt.plot(ls,rho_c34)
-plt.plot(ls,rho_c24)
+plt.plot(ls,rho_c12)
+plt.plot(ls,rho_c13)
+plt.plot(ls,rho_c14)
+plt.plot(ls,rho_c15)
+plt.plot(ls,rho_c16)
+plt.plot(ls,rho_c45)
+plt.plot(ls,rho_c46)
 plt.plot(ls,rho_c56)
+plt.plot(ls,rho_c135)
 plt.xlim([1,ls[-1]])
 plt.ylim([0,1])
 plt.xlabel('l')
 plt.ylabel('rho')
-plt.legend(['DES + CIB','LSST + CIB','CIB + SPT', 'LSST + spt', 'DES+WISExSCOS' ])
-plt.savefig('rho_5muk_beam1_lm3k_mv_double.png')
+plt.legend(['WISE + LSST','WISE + CIB','WISE + SPT', 'WISE + DES', 'WISE+WISExSCOS','SPT + DES','SPT + WISExSCOS','DES+WISExSCOS','WISE+CIB+DES'])
+plt.savefig('rho_5muk_beam1_lm3k_eb_double1.png')
+
+plt.figure(figsize = (8,5))        
+plt.plot(ls,rho_c23)
+plt.plot(ls,rho_c24)
+plt.plot(ls,rho_c25)
+plt.plot(ls,rho_c26)
+plt.plot(ls,rho_c34)
+plt.plot(ls,rho_c35)
+plt.plot(ls,rho_c36)
+plt.xlim([1,ls[-1]])
+plt.ylim([0,1])
+plt.xlabel('l')
+plt.ylabel('rho')
+plt.legend(['LSST + CIB','LSST + SPT','LSST + DES', 'LSST+WISExSCOS','CIB + SPT', 'CIB + DES', 'CIB+WISExSCOS' ])
+plt.savefig('rho_5muk_beam1_lm3k_eb_double2.png')
+
