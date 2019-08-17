@@ -642,7 +642,7 @@ for i, li in enumerate(ls):
 #    spt_nst[i], spt_nse[i], spt_nsb[i], spt_nste[i], spt_nstb[i], spt_nseb[i] = spt_ns(al, bl)
     spt_nst[i] = spt_nst[i] * li**2 * (li+1)**2/4
     spt_nse[i] = spt_nse[i] * li**2 * (li+1)**2/4
-    spt_nseb[i] = spt_nseb[i] * li**2 * (li+1)**2/4
+#    spt_nseb[i] = spt_nseb[i] * li**2 * (li+1)**2/4
     spt_nseb[i] = noise_eb(al, bl) * li**2 * (li+1)**2/4
     spt_nste[i] = spt_nste[i] * li**2 * (li+1)**2/4
     spt_nstb[i] = spt_nstb[i] * li**2 * (li+1)**2/4
@@ -688,7 +688,7 @@ for i, li in enumerate(ls):
     c45[i] = cki5[i]
     c46[i] = cki6[i]
     c56[i] = C_ij(li, 'DES', 'WISE x SCOS')
-    rho_spt[i] = ckk[i] / cii4[i]
+    rho_spt[i] = (ckk[i] / cii4[i])**0.5
     rho_c12[i] = cross_rho2(li, cii1[i], c12[i], c12[i], cii2[i], cki1[i], cki2[i])    
     rho_c13[i] = cross_rho2(li, cii1[i], c13[i], c13[i], cii3[i], cki1[i], cki3[i])    
     rho_c14[i] = cross_rho2(li, cii1[i], c14[i], c14[i], cii4[i], cki1[i], cki4[i])    

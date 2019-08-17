@@ -114,7 +114,7 @@ def C_kk(l,suvy):
     return a
 
 def C_ki(l,suvy):
-    if suvy == 'CIB':
+    if suvy == 'SPT':
         sa = C_kk(l, suvy)
     else:
         k = (l + 0.5)/chis
@@ -133,7 +133,7 @@ def cross_rho2(l, c11, c12, c21, c22, ck1, ck2):
     a = matrix_cii(l, c11, c12, c21, c22)
 #    print a
     b = a.I
-    kk = C_kk(l, 'spt')
+    kk = C_kk(l, 'SPT')
     r11 = ck1**2 * b[0,0]
     r12 = ck1 * ck2 * b[0,1]
     r22 = ck2**2 * b[1,1]
@@ -213,7 +213,7 @@ def cross_rho(l, suvy1, suvy2):
         
 def C_ii(l,suvy):
     k = (l + 0.5)/chis
-    if suvy == 'CIB_pln':
+    if suvy == 'CIB':
         a = 3500 * (l/3000.0) ** (-1.25)
         return a
     else:
@@ -221,9 +221,9 @@ def C_ii(l,suvy):
         return sum(a)
 
 def C_ij(l,suvy1, suvy2):
-    if suvy1 == 'spt':
+    if suvy1 == 'SPT':
         a = C_ki(l, suvy2)
-    elif suvy2 == 'spt':
+    elif suvy2 == 'SPT':
         a = C_ki(l, suvy1)
     else:
         k = (l + 0.5)/chis
@@ -480,19 +480,34 @@ survey_list = ['DESI', 'WISE', 'LSST', 'CIB', 'SPT', 'DES', 'WISE x SCOS']
 comb2 = list(combinations(['DESI', 'WISE', 'LSST', 'CIB', 'SPT', 'DES', 'WISE x SCOS'], 2))
 comb3 = list(combinations(['DESI', 'WISE', 'LSST', 'CIB', 'SPT', 'DES', 'WISE x SCOS'], 3))
 
+#legd1 = ['DESI','WISE','LSST','SPT','CIB pln','DES','WISE x SCOS']
+legd1 = []
+legd2 = []
+legd3 = []
+
+for sy in survey_list:
+    legd1.append(sy)
+
+for sy in comb2:
+    legd2.append( sy[0] + '+' + sy[1])
+
+for sy in comb3:
+    legd3.append( sy[0] + '+' + sy[1] + '+' + sy[2])
+
 ls = np.arange(2,1500+1,10)
 #ls = [2, 22, 62, 102, 182, 282, 382, 582, 882, 1082, 1482]
 ls = np.asarray(ls)
 
-rho = np.zeros(( ls.shape, len(survey_list) ))
-cki = np.zeros(( ls.shape, len(survey_list) ))
-cii = np.zeros(( ls.shape, len(survey_list) ))
-cij = np.zeros(( ls.shape, len(comb2) ))
-cijk = np.zeros(( ls.shape, len(comb3) ))
-rho_double = np.zeros(( ls.shape, len(comb2) ))
-rho_triple = np.zeros(( ls.shape, len(comb3) ))
+rho = np.zeros(( len(ls), len(survey_list) ))
+cki = np.zeros(( len(ls), len(survey_list) ))
+cii = np.zeros(( len(ls), len(survey_list) ))
+cij = np.zeros(( len(ls), len(comb2) ))
+cijk = np.zeros(( len(ls), len(comb3) ))
+rho_double = np.zeros(( len(ls), len(comb2) ))
+rho_triple = np.zeros(( len(ls), len(comb3) ))
 
 spt_nseb = np.zeros(ls.shape)
+ckk = np.zeros(ls.shape)
 
 l_long = np.arange(0,15000,1)
 nfwhm = n_fwhm(l_long)
@@ -505,7 +520,7 @@ for i, li in enumerate(ls):
     start = datetime.datetime.now()
     al = li * np.cos(theta)
     bl = li * np.sin(theta)
-    spt_nseb[i] = spteb[i] * li**2 * (li+1)**2/4
+    spt_nseb[i] = spteb[i] # data already have * li**2 * (li+1)**2/4
     print  'eb', '%.2E' % Decimal(spt_nseb[i])
     ckk[i] = C_kk(li,'CIB') 
 
@@ -528,18 +543,20 @@ for i, li in enumerate(ls):
     for zi , surveys in enumerate(comb3):
         sy1 = surveys[0]
         sy2 = surveys[1]
-        sy2 = surveys[2]
+        sy3 = surveys[2]
         sy1id = survey_list.index( sy1 )
         sy2id = survey_list.index( sy2 )
         sy3id = survey_list.index( sy3 )
         sy12id = comb2.index((sy1, sy2))
         sy13id = comb2.index((sy1, sy3))
         sy23id = comb2.index((sy2, sy3))
-        rho_triple [i][j] = cross_rho3(li, ckk[i], cii[i][sy1id], cij[i][sy12id], cij[i][sy13id], cii[i][sy2id], cij[i][sy23id], cii[i][sy3id], cki[sy1id], cki[sy2id], cki[sy3id])
+        rho_triple [i][zi] = cross_rho3(li, ckk[i], cii[i][sy1id], cij[i][sy12id], cij[i][sy13id], cii[i][sy2id], cij[i][sy23id], cii[i][sy3id], cki[i][sy1id], cki[i][sy2id], cki[i][sy3id])
         
     end = datetime.datetime.now()
     print (end-start)
 
+ckk = ckk.reshape((len(ls), 1))
+print ckk.shape
 rho = cki / (cii * ckk)**0.5
 rho0 = rho[:, 0]
 rho1 = rho[:, 1]
@@ -549,41 +566,14 @@ rho4 = rho[:, 4]
 rho5 = rho[:, 5]
 rho6 = rho[:, 6]
 
-rho_c12 = np.zeros(ls.shape) 
-rho_c13 = np.zeros(ls.shape) 
-rho_c14 = np.zeros(ls.shape) 
-rho_c15 = np.zeros(ls.shape) 
-rho_c16 = np.zeros(ls.shape) 
-rho_c23 = np.zeros(ls.shape) 
-rho_c24 = np.zeros(ls.shape) 
-rho_c25 = np.zeros(ls.shape) 
-rho_c26 = np.zeros(ls.shape) 
-rho_c34 = np.zeros(ls.shape) 
-rho_c35 = np.zeros(ls.shape) 
-rho_c36 = np.zeros(ls.shape) 
-rho_c45 = np.zeros(ls.shape) 
-rho_c46 = np.zeros(ls.shape) 
-rho_c56 = np.zeros(ls.shape) 
-rho_c01 = np.zeros(ls.shape) 
-rho_c02 = np.zeros(ls.shape) 
-rho_c03 = np.zeros(ls.shape) 
-rho_c04 = np.zeros(ls.shape) 
-rho_c05 = np.zeros(ls.shape) 
-
-rho_c135 = np.zeros(ls.shape) 
-
-
-data = np.column_stack((ls, rho0, rho1, rho2, rho3, rho_spt, rho_c03, rho_c24,spt_nst))
-header = "ls, DESI, WISE, LSST, CIB, rho_spt, DESI_CIB, LSST_SPT,spt_nst "
-np.savetxt('spt_lmax3k_fwhm1.dat', data, header=header)
+data = np.column_stack((ls, rho0, rho1, rho2, rho3, rho4, rho5, rho6))
+header = "ls, DESI, WISE, LSST, CIB, rho_spt, DES, WISE x SCOS"
+np.savetxt('rho_single_gener.dat', data, header=header)
 
 spteb = np.column_stack((ls, spt_nseb))
 header = "ls, spt_nseb"
-np.savetxt('spt_eb.dat', spteb, header=header)
+np.savetxt('spt_eb_gener.dat', spteb, header=header)
 
-plt.figure(figsize = (8,5))        
-plt.plot(xx, yy)
-plt.savefig('dn_dz.png')
 wi_z = zs
 w0 = Wi(wi_z, 'DESI')
 w1 = Wi(wi_z, 'WISE')
@@ -607,37 +597,52 @@ plt.rc('text', usetex=True)
 plt.rc('font', family='serif')
          
 plt.figure(figsize = (8,5))        
-plt.plot(ls,rho0)
-plt.plot(ls,rho1)
-plt.plot(ls,rho2)
-plt.plot(ls,rho3)
-plt.plot(ls,rho5)
-plt.plot(ls,rho6)
-plt.plot(ls,rho_spt)
+for i, survey in enumerate(survey_list):
+    plt.plot(ls, rho[:,i], linewidth = 1)
 plt.xlim([1,ls[-1]])
 plt.ylim([0,1])
 plt.xlabel('l')
 plt.ylabel('rho')
-plt.legend(['DESI','WISE','LSST','CIB pln','DES','WISE x SCOS','spt'])
+plt.legend(legd1)
 plt.savefig('rho_5muk_beam1_lm3k_eb_single0.png')
 
-plt.figure(figsize = (8,5))        
-for survey in comb2:
-    plt.plot(ls, survey)
+plt.figure(figsize = (16,10))        
+for i, survey in enumerate(survey_list):
+    plt.plot(ls, rho[:,i], linestyle = '-', linewidth = 3)
+for i, survey in enumerate(comb2):
+    if survey[0] == 'WISE':
+        plt.plot(ls, rho_double[:,i], linestyle = '--', linewidth = 1)
+    elif survey[0] == 'DESI':
+        plt.plot(ls, rho_double[:,i], linestyle = '-', linewidth = 1)
+    elif survey[0] == 'LSST' or 'CIB':
+        plt.plot(ls, rho_double[:,i], linestyle = '-.', linewidth = 1)
+    else:
+        plt.plot(ls, rho_double[:,i], linestyle = ':', linewidth = 1)
 plt.xlim([1,ls[-1]])
 plt.ylim([0,1])
 plt.xlabel('l')
-plt.ylabel('rho')
-plt.legend(['WISE + LSST','WISE + CIB','WISE + SPT', 'WISE + DES', 'WISE+WISExSCOS','SPT + DES','SPT + WISExSCOS','DES+WISExSCOS','LSST + CIB','LSST + SPT','LSST + DES', 'LSST+WISExSCOS','CIB + SPT', 'CIB + DES', 'CIB+WISExSCOS'])
-plt.savefig('rho_5muk_beam1_lm3k_eb_double1.png')
+plt.ylabel('rho double')
+plt.legend(legd1 + legd2)
+#plt.legend(['WISE + LSST','WISE + CIB','WISE + SPT', 'WISE + DES', 'WISE+WISExSCOS','SPT + DES','SPT + WISExSCOS','DES+WISExSCOS','LSST + CIB','LSST + SPT','LSST + DES', 'LSST+WISExSCOS','CIB + SPT', 'CIB + DES', 'CIB+WISExSCOS'])
+plt.savefig('rho_comb2.png')
 
-plt.figure(figsize = (8,5))        
-for survey in comb3:
-    plt.plot(ls,survey)
+plt.figure(figsize = (24,15))        
+for i, survey in enumerate(survey_list):
+    plt.plot(ls, rho[:,i], linestyle = '-', linewidth = 3)
+for i, survey in enumerate(comb3):
+    if survey[0] == 'DESI':
+        plt.plot(ls, rho_triple[:, i], linestyle = ':')
+    elif survey[0] == 'WISE':
+        plt.plot(ls, rho_triple[:, i], linestyle = '--')
+    elif survey[0] == 'LSST' or 'CIB':
+        plt.plot(ls, rho_triple[:, i], linestyle = '-.')
+    else:
+        plt.plot(ls, rho_triple[:, i], linestyle = '-')
 plt.xlim([1,ls[-1]])
 plt.ylim([0,1])
 plt.xlabel('l')
-plt.ylabel('rho')
-#plt.legend( ])
-plt.savefig('rho_5muk_beam1_lm3k_eb_double2.png')
+plt.ylabel('rho triple')
+plt.title('rho 3 tracers')
+plt.legend( legd1 + legd3 ) 
+plt.savefig('rho_comb3.png')
 
