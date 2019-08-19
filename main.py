@@ -28,7 +28,7 @@ from itertools import combinations, permutations
 
 h = 0.675
 alpha = 1.27; beta = 1.02;
-nz = 100 #number of steps to use for the radial/redshift integration
+nz = 500 #number of steps to use for the radial/redshift integration
 kmax=10  #kmax to use
 omega_m = 0.27
 c = 1
@@ -119,7 +119,9 @@ def C_ki(l,suvy):
     else:
         k = (l + 0.5)/chis
         a = H(zs)**1 / (chis)**2 * Wi(zs, suvy) * Wk(zs) * PK.P(zs, k,grid = False)* (4 / (1+zs)**2 / 9 / H(0)**4 / omega_m**2)**1 * dz / c
-        sa = sum(a)
+        if suvy == 'LSST tomographic' or suvy == 'DES tomographic':
+            sa = np.sum(a, axis = 1)
+        else: sa = sum(a)
     return sa
 
 def matrix_cii(l, c11, c12, c21, c22):
@@ -154,6 +156,28 @@ def cross_rho3(l, ckk, c11, c12, c13, c22, c23, c33, ck1, ck2, ck3):
     rho = (rho / ckk)**0.5
     return rho
 
+def tomog_rho(l, suvy):
+    ckk = C_kk(l, suvy)
+    cki = C_ki(l, suvy)
+    dim = len(cki)
+    cij = np.zeros( (dim, dim) )
+    wg = Wi(zs, suvy)
+    for i in range(0, dim):        
+        for j in range(0, dim):
+            cij[i][j] = C_ij_tomog(l, suvy, wg[i, :], wg[j, :])
+    cij = np.matrix( cij )
+    inver_cij = cij.I
+    cki = np.array( [cki] )
+    ckj = cki.T
+#    print 'cki', cki
+ #   print 'ckj', ckj
+    rho = cki * inver_cij * ckj
+  #  print rho
+    rho = ( float(rho) / ckk )**0.5
+    if suvy != 'LSST tomographic' and suvy != 'DES tomographic':
+        print 'unknow survey: ', suvy                                
+    return rho
+                    
 def cross_cii(l, suvy1, suvy2):
     c11 = 0
     c12 = 0
@@ -218,7 +242,10 @@ def C_ii(l,suvy):
         return a
     else:
         a = H(zs)**1 / (chis)**2 * Wi(zs,suvy) * Wi(zs,suvy) * PK.P(zs, k,grid = False) * (4 / (1+zs)**2 / 9 / H(0)**4 / omega_m**2)**1 * dz/ c
-        return sum(a)
+        if suvy == 'LSST tomographic' or suvy == 'DES tomographic':
+            sa = np.sum(a, axis = 1)
+        else: sa = sum(a)
+        return sa
 
 def C_ij(l,suvy1, suvy2):
     if suvy1 == 'SPT':
@@ -231,16 +258,25 @@ def C_ij(l,suvy1, suvy2):
         a = sum(a)
     return a
 
+def C_ij_tomog(l, suvy, wni, wnj):
+    if suvy == 'LSST tomographic' or suvy == 'DES tomographic':
+        k = (l + 0.5)/chis
+        a = H(zs)**1 / (chis)**2 * wni * wnj * PK.P(zs, k,grid = False) * (4 / (1+zs)**2 / 9 / H(0)**4 / omega_m**2)**1 * dz/ c
+        a = sum(a)        
+    else:
+        print 'wrong survey'
+    return a
+
 def H(z):
     return results.h_of_z(z)    #Mpc-1
 
 def dn_dz(z, suvy):
-    if suvy == 'LSST':        
+    if suvy == 'LSST' or suvy == 'LSST tomographic':        
         z0 = 0.5
         dn = z**alpha * np.exp(-(z/z0)**beta)    
     elif suvy == 'WISE':
         dn = 20 * np.exp( - (z - 0.1)**2 )
-    elif suvy == 'DES':
+    elif suvy == 'DES' or suvy == 'DES tomographic':
         dn = 7.7 * np.exp( -(z - 0.657)**2 / 0.043**2 / 2)
     elif suvy == 'WISE x SCOS':
         dn = np.zeros(len(z))
@@ -279,10 +315,25 @@ def b(z, suvy):
     return b
 
 def W_tmg(z, suvy):
-    if suvy == 'LSST':
+    if suvy == 'LSST tomographic':
         wg = np.zeros((10, len(z)))
-        for i in range(10):
-            wg[i,:] = b(z, suvy) * dn_dz(z, suvy) * special.erf()
+        zi0 = np.array([0.4, 0.6, 0.9, 1.2, 1.5, 1.9, 2.2, 2.8, 3.4])
+        zim = 0.82 * zi0 - 0.127
+        zi = np.array([0] + list(zim) + [3.5])
+        for i in range(10):            
+            dndzi = 0.5 * dn_dz(z, suvy) * ( special.erfc( (zi[i] - z) / np.sqrt(2) / 0.03 / (1 + z) ) - special.erfc( (zi[i + 1] - z) / np.sqrt(2) / 0.03 / (1 + z) ))
+            wg[i,:] = dndzi * b(z, suvy)
+        wg = wg / sum (dn_dz(z, suvy)*dz)
+    elif suvy == 'DES tomographic':
+        wg = np.zeros((4, len(z)))
+        zi0 = np.array([0.5, 0.55, 0.6, 0.65, 0.7])
+        zi = zi0
+        for i in range(4):            
+            dndzi = 0.5 * dn_dz(z, suvy) * ( special.erfc( (zi[i] - z) / np.sqrt(2) / 0.03 / (1 + z) ) - special.erfc( (zi[i+1] - z) / np.sqrt(2) / 0.03 / (1 + z) ))
+            wg[i,:] = dndzi * b(z, suvy)
+        wg = wg / sum(dn_dz(z, suvy)*dz)
+    return wg
+
     
 def Wi(z, suvy):
     if suvy == 'WISE':
@@ -291,9 +342,13 @@ def Wi(z, suvy):
     elif suvy == 'LSST':
         wg = b(z,suvy) * dn_dz(z, suvy)/sum( dn_dz(z, suvy)*dz )
         return wg
+    elif suvy == 'LSST tomographic':
+        return W_tmg(z, suvy)
     elif suvy == 'DES':
         wg = b(z,suvy) * dn_dz(z, suvy)/sum( dn_dz(z, suvy)*dz )
         return wg
+    elif suvy == 'DES tomographic':
+        return W_tmg(z, suvy)
     elif suvy == 'DESI':
         wg = b(z,suvy) * dn_dz(z, suvy)/sum( dn_dz(z, suvy)*dz )
         return wg
@@ -479,11 +534,12 @@ def P(zs, k):
 survey_list = ['DESI', 'WISE', 'LSST', 'CIB', 'SPT', 'DES', 'WISE x SCOS']
 comb2 = list(combinations(['DESI', 'WISE', 'LSST', 'CIB', 'SPT', 'DES', 'WISE x SCOS'], 2))
 comb3 = list(combinations(['DESI', 'WISE', 'LSST', 'CIB', 'SPT', 'DES', 'WISE x SCOS'], 3))
-
+survey_tomog_list = ['LSST tomographic', 'DES tomographic']
 #legd1 = ['DESI','WISE','LSST','SPT','CIB pln','DES','WISE x SCOS']
 legd1 = []
 legd2 = []
 legd3 = []
+legd4 = []
 
 for sy in survey_list:
     legd1.append(sy)
@@ -493,6 +549,9 @@ for sy in comb2:
 
 for sy in comb3:
     legd3.append( sy[0] + '+' + sy[1] + '+' + sy[2])
+
+for sy in survey_tomog_list:
+    legd4.append(sy)
 
 ls = np.arange(2,1500+1,10)
 #ls = [2, 22, 62, 102, 182, 282, 382, 582, 882, 1082, 1482]
@@ -505,6 +564,7 @@ cij = np.zeros(( len(ls), len(comb2) ))
 cijk = np.zeros(( len(ls), len(comb3) ))
 rho_double = np.zeros(( len(ls), len(comb2) ))
 rho_triple = np.zeros(( len(ls), len(comb3) ))
+rho_tomog = np.zeros(( len(ls), len(survey_tomog_list) ))
 
 spt_nseb = np.zeros(ls.shape)
 ckk = np.zeros(ls.shape)
@@ -552,6 +612,9 @@ for i, li in enumerate(ls):
         sy23id = comb2.index((sy2, sy3))
         rho_triple [i][zi] = cross_rho3(li, ckk[i], cii[i][sy1id], cij[i][sy12id], cij[i][sy13id], cii[i][sy2id], cij[i][sy23id], cii[i][sy3id], cki[i][sy1id], cki[i][sy2id], cki[i][sy3id])
         
+    for j , surveys in enumerate(survey_tomog_list):
+        rho_tomog [i][j] = tomog_rho(li, surveys)
+            
     end = datetime.datetime.now()
     print (end-start)
 
@@ -578,8 +641,10 @@ wi_z = zs
 w0 = Wi(wi_z, 'DESI')
 w1 = Wi(wi_z, 'WISE')
 w2 = Wi(wi_z, 'LSST')
+w2t = Wi(wi_z, 'LSST tomographic')
 w3 = Wi(wi_z, 'CIB')
 w4 = Wi(wi_z, 'DES')
+w4t = Wi(wi_z, 'DES tomographic')
 w5 = Wi(wi_z, 'WISE x SCOS')
 
 plt.figure(figsize = (8,5))        
@@ -592,6 +657,41 @@ plt.plot(wi_z, w5)
 plt.xlim([0,4.5])
 plt.legend(['DESI','WISE','LSST','CIB','DES','WISE x SCOS'])
 plt.savefig('weight.png')
+
+plt.figure(figsize = (8,5))       
+plt.plot(wi_z, w2, linewidth = 2, color = 'r')
+#plt.plot(wi_z, w4, linewidth = 2, color = 'b')
+for weight in w2t:
+    plt.plot(wi_z, weight, color = 'r')
+#for weight in w4t:
+ #   plt.plot(wi_z, weight, color = 'b')
+plt.xlim([0,4.5])
+plt.legend(['LSST'])
+plt.savefig('weight_lsst.png')
+
+plt.figure(figsize = (8,5))       
+#plt.plot(wi_z, w2, linewidth = 2, color = 'r')
+plt.plot(wi_z, w4, linewidth = 2, color = 'b')
+#for weight in w2t:
+ #   plt.plot(wi_z, weight, color = 'r')
+for weight in w4t:
+   plt.plot(wi_z, weight, color = 'b')
+plt.xlim([0,1.5])
+plt.legend(['DES'])
+plt.savefig('weight_des.png')
+
+plt.figure(figsize = (8,5))
+for i, surveys in enumerate(survey_tomog_list):
+    plt.plot(ls, rho_tomog[:,i], linestyle = '--')
+plt.plot(ls, rho2)
+plt.plot(ls, rho5)
+#print rho_tomog.T
+plt.xlim([1,ls[-1]])
+plt.ylim([0,1])
+plt.xlabel('l')
+plt.ylabel('rho tomographic')
+plt.legend(legd4 + ['LSST','DES'])
+plt.savefig('rho_tomog.png')
 
 plt.rc('text', usetex=True)
 plt.rc('font', family='serif')
@@ -634,7 +734,7 @@ for i, survey in enumerate(comb3):
         plt.plot(ls, rho_triple[:, i], linestyle = ':')
     elif survey[0] == 'WISE':
         plt.plot(ls, rho_triple[:, i], linestyle = '--')
-    elif survey[0] == 'LSST' or 'CIB':
+    elif survey[0] == 'LSST':
         plt.plot(ls, rho_triple[:, i], linestyle = '-.')
     else:
         plt.plot(ls, rho_triple[:, i], linestyle = '-')
