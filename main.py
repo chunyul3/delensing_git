@@ -27,8 +27,7 @@ from decimal import Decimal
 from itertools import combinations, permutations
 
 h = 0.675
-alpha = 1.27; beta = 1.02;
-nz = 500 #number of steps to use for the radial/redshift integration
+nz = 100 #number of steps to use for the radial/redshift integration
 kmax=10  #kmax to use
 omega_m = 0.27
 c = 1
@@ -66,6 +65,15 @@ cte = data2[:, 4]
 data3 = np.loadtxt('spt_eb.dat')
 spteb = data3[:,1]
 
+data4 = np.loadtxt('rho_single_lm3k.dat')
+rho_ls = data4[:,0]
+
+rho_ls_long = np.arange(2, rho_ls[-1] + 1)
+rho_long = np.zeros((7, len(rho_ls_long)))
+for i in range(0,7):    
+    rhoi_itp = interp1d(rho_ls, data4[:,i+1])
+    rho_long[i, :] = rhoi_itp(rho_ls_long)
+
 zeros = np.zeros(10000)
 ct = np.append(ct, zeros)
 ct_tot = np.append(ct_tot, zeros)
@@ -75,6 +83,7 @@ cb = np.append(cb, zeros)
 cb_tot = np.append(cb_tot, zeros)
 cte = np.append(cte, zeros)
 cte_tot = np.append(cte_tot, zeros)
+
 
 
 pars = camb.CAMBparams()
@@ -100,7 +109,8 @@ w = np.ones(chis.shape)
 PK = camb.get_matter_power_interpolator(pars, nonlinear=True, 
     hubble_units=False, k_hunit=False, kmax=kmax,
     var1=model.Transfer_Weyl,var2=model.Transfer_Weyl, zmax=zs[-1])
-
+cl_camb = results.get_lens_potential_cls(12000)
+cl_camb_b = cl_camb[:, 0]
 
 def Rou(l,suvy):
     rou_sq = C_ki(l,suvy) ** 2 / C_kk(l,suvy) / C_ii(l,suvy)
@@ -130,6 +140,33 @@ def matrix_cii(l, c11, c12, c21, c22):
     a0 = [[c11,c12],[c12,c22]]
     a = np.matrix(a0)
     return a 
+
+def cross_rho(l, suvy1, suvy2):
+    a = cross_cii(l, suvy1, suvy2)
+    b = np.zeros((2,2))
+    c1 = 0
+    c2 = 0
+    if suvy2 == 'spt':
+        c1 = C_ki(l, suvy1); c2 = C_kk(l, suvy2)
+        if l < 6100:
+            b = a.I
+            #print b
+    elif suvy1 == 'spt':
+        cl = C_ki(l, suvy2); c2 = C_kk(l, suvy1)
+        if l < 6100:
+            b = a.I
+#            print a
+            
+    else:
+        cl = C_ki(l, suvy1); c2 = C_ki(l, suvy2)
+        b = a.I
+    kk = C_kk(l, suvy2)
+    r11 = c1**2 * b[0,0]
+    r12 = c1 * c2 * b[0,1]
+    r22 = c2**2 * b[1,1]
+    rho = (r11 + r12 * 2 + r22) / kk
+    rho = rho**0.5
+    return rho
 
 def cross_rho2(l, c11, c12, c21, c22, ck1, ck2):
     a = matrix_cii(l, c11, c12, c21, c22)
@@ -162,17 +199,23 @@ def tomog_rho(l, suvy):
     dim = len(cki)
     cij = np.zeros( (dim, dim) )
     wg = Wi(zs, suvy)
-    for i in range(0, dim):        
-        for j in range(0, dim):
-            cij[i][j] = C_ij_tomog(l, suvy, wg[i, :], wg[j, :])
+    ng = dn_dz(zs, suvy)
+    if suvy == 'LSST tomographic':
+        for i in range(0, dim):        
+            for j in range(0, dim):                
+                cij[i][j] = C_ij_tomog(l, suvy, wg[i, :], wg[j, :])
+                if i ==j :
+                    cij[i][j] += (np.pi / 60 / 180)**2 / 26 / ns_lsst(ng, ng[i,:], ng[j,:])**1
+#                    print ns_lsst(ng, ng[i,:], ng[j,:])
+    elif suvy == 'DES tomographic':
+        for i in range(0, dim):        
+            for j in range(0, dim):
+                cij[i][j] = C_ij_tomog(l, suvy, wg[i, :], wg[j, :])
     cij = np.matrix( cij )
     inver_cij = cij.I
     cki = np.array( [cki] )
     ckj = cki.T
-#    print 'cki', cki
- #   print 'ckj', ckj
     rho = cki * inver_cij * ckj
-  #  print rho
     rho = ( float(rho) / ckk )**0.5
     if suvy != 'LSST tomographic' and suvy != 'DES tomographic':
         print 'unknow survey: ', suvy                                
@@ -208,41 +251,26 @@ def cross_cii(l, suvy1, suvy2):
     a = np.matrix(a0)
     return a 
 
-def cross_rho(l, suvy1, suvy2):
-    a = cross_cii(l, suvy1, suvy2)
-    b = np.zeros((2,2))
-    c1 = 0
-    c2 = 0
-    if suvy2 == 'spt':
-        c1 = C_ki(l, suvy1); c2 = C_kk(l, suvy2)
-        if l < 6100:
-            b = a.I
-            #print b
-    elif suvy1 == 'spt':
-        cl = C_ki(l, suvy2); c2 = C_kk(l, suvy1)
-        if l < 6100:
-            b = a.I
-#            print a
-            
-    else:
-        cl = C_ki(l, suvy1); c2 = C_ki(l, suvy2)
-        b = a.I
-    kk = C_kk(l, suvy2)
-    r11 = c1**2 * b[0,0]
-    r12 = c1 * c2 * b[0,1]
-    r22 = c2**2 * b[1,1]
-    rho = (r11 + r12 * 2 + r22) / kk
-    rho = rho**0.5
-    return rho
         
 def C_ii(l,suvy):
     k = (l + 0.5)/chis
     if suvy == 'CIB':
         a = 3500 * (l/3000.0) ** (-1.25)
         return a
+    if suvy == 'LSST':
+        a = H(zs)**1 / (chis)**2 * Wi(zs,suvy) * Wi(zs,suvy) * PK.P(zs, k,grid = False) * (4 / (1+zs)**2 / 9 / H(0)**4 / omega_m**2)**1 * dz/ c 
+        sa = sum(a) + (np.pi / 60 / 180)**2 / 26
+        return sa
+    if suvy == 'SPT':
+        print 'wrong survey', suvy
     else:
         a = H(zs)**1 / (chis)**2 * Wi(zs,suvy) * Wi(zs,suvy) * PK.P(zs, k,grid = False) * (4 / (1+zs)**2 / 9 / H(0)**4 / omega_m**2)**1 * dz/ c
-        if suvy == 'LSST tomographic' or suvy == 'DES tomographic':
+        if suvy == 'LSST tomographic':
+            sa = np.sum(a, axis = 1)
+            print 'sa', sa
+            sa = sa + l**2 / 26 / 120**2 / 180**2
+            print 'sa + noise', sa
+        elif suvy == 'DES tomographic':
             sa = np.sum(a, axis = 1)
         else: sa = sum(a)
         return sa
@@ -258,8 +286,14 @@ def C_ij(l,suvy1, suvy2):
         a = sum(a)
     return a
 
+
 def C_ij_tomog(l, suvy, wni, wnj):
-    if suvy == 'LSST tomographic' or suvy == 'DES tomographic':
+    if suvy == 'LSST tomographic':
+        k = (l + 0.5)/chis
+        a = H(zs)**1 / (chis)**2 * wni * wnj * PK.P(zs, k,grid = False) * (4 / (1+zs)**2 / 9 / H(0)**4 / omega_m**2)**1 * dz/ c 
+        a = sum(a)
+ #       print 'a', a
+    elif suvy == 'DES tomographic':
         k = (l + 0.5)/chis
         a = H(zs)**1 / (chis)**2 * wni * wnj * PK.P(zs, k,grid = False) * (4 / (1+zs)**2 / 9 / H(0)**4 / omega_m**2)**1 * dz/ c
         a = sum(a)        
@@ -271,13 +305,33 @@ def H(z):
     return results.h_of_z(z)    #Mpc-1
 
 def dn_dz(z, suvy):
-    if suvy == 'LSST' or suvy == 'LSST tomographic':        
+    if suvy == 'LSST':        
+        alpha = 1.27; beta = 1.02
         z0 = 0.5
         dn = z**alpha * np.exp(-(z/z0)**beta)    
+    elif suvy == 'LSST tomographic':
+        zi0 = np.array([0.4, 0.6, 0.9, 1.2, 1.5, 1.9, 2.2, 2.8, 3.4])
+        zim = 0.82 * zi0 - 0.127
+        zi = np.array([0] + list(zim) + [3.5])
+        dn = np.zeros((10, len(z)))
+        for i in range(10):            
+            dn[i,:] = 0.5 * dn_dz(z, 'LSST') * ( special.erfc( (zi[i] - z) / np.sqrt(2) / 0.03 / (1 + z) ) - special.erfc( (zi[i + 1] - z) / np.sqrt(2) / 0.03 / (1 + z) ))
     elif suvy == 'WISE':
         dn = 20 * np.exp( - (z - 0.1)**2 )
-    elif suvy == 'DES' or suvy == 'DES tomographic':
+    elif suvy == 'CIB_2' or suvy == 'CIB':
+        A = 0.289; z0 = 1.34; alpha = 1.50
+        dn = A * z**alpha * np.exp( - (z/z0)**alpha)
+#        dn = A * z**(alpha-1) * alpha * (1 - alpha*(z/z0)**alpha) * np.exp( - (z/z0)**alpha)        
+    elif suvy == 'DES':
         dn = 7.7 * np.exp( -(z - 0.657)**2 / 0.043**2 / 2)
+    elif suvy == 'DES tomographic':
+        dn = np.zeros((4, len(z)))
+        zi0 = np.array([0.5, 0.51, 0.55, 0.65, 0.8])
+        #zi0 = np.array([0.5, 0.53, 0.6, 0.65, 0.78])
+        #zi0 = np.array([0.5, 0.55, 0.6, 0.65, 0.7])
+        zi = zi0
+        for i in range(4):            
+            dn[i,:] = 0.5 * dn_dz(z, 'DES') * ( special.erfc( (zi[i] - z) / np.sqrt(2) / 0.03 / (1 + z) ) - special.erfc( (zi[i+1] - z) / np.sqrt(2) / 0.03 / (1 + z) ))
     elif suvy == 'WISE x SCOS':
         dn = np.zeros(len(z))
         for i, zi in enumerate(z):            
@@ -317,21 +371,14 @@ def b(z, suvy):
 def W_tmg(z, suvy):
     if suvy == 'LSST tomographic':
         wg = np.zeros((10, len(z)))
-        zi0 = np.array([0.4, 0.6, 0.9, 1.2, 1.5, 1.9, 2.2, 2.8, 3.4])
-        zim = 0.82 * zi0 - 0.127
-        zi = np.array([0] + list(zim) + [3.5])
+        dndz = dn_dz(z, suvy)
         for i in range(10):            
-            dndzi = 0.5 * dn_dz(z, suvy) * ( special.erfc( (zi[i] - z) / np.sqrt(2) / 0.03 / (1 + z) ) - special.erfc( (zi[i + 1] - z) / np.sqrt(2) / 0.03 / (1 + z) ))
-            wg[i,:] = dndzi * b(z, suvy)
-        wg = wg / sum (dn_dz(z, suvy)*dz)
+            wg[i,:] = dndz[i,:] * b(z, suvy) / sum(dndz[i,:] * dz)
     elif suvy == 'DES tomographic':
         wg = np.zeros((4, len(z)))
-        zi0 = np.array([0.5, 0.55, 0.6, 0.65, 0.7])
-        zi = zi0
-        for i in range(4):            
-            dndzi = 0.5 * dn_dz(z, suvy) * ( special.erfc( (zi[i] - z) / np.sqrt(2) / 0.03 / (1 + z) ) - special.erfc( (zi[i+1] - z) / np.sqrt(2) / 0.03 / (1 + z) ))
-            wg[i,:] = dndzi * b(z, suvy)
-        wg = wg / sum(dn_dz(z, suvy)*dz)
+        dndz = dn_dz(z, suvy)
+        for i in range(4):                        
+            wg[i,:] = dndz[i, :] * b(z, suvy) / sum(dndz[i,:] * dz)
     return wg
 
     
@@ -363,11 +410,8 @@ def Wi(z, suvy):
         wcib = wcib * 21.088
         return wcib    
     elif suvy =='CIB_2':
-        A = 0.289; z0 = 1.34; alpha = 1.30; 
-        wcib2 = A * z**alpha * np.exp( - (z/z0)**alpha)
-        a = max(wcib2)
-        wcib2 = wcib2/a
-        return wcib2
+        wg = b(z,suvy) * dn_dz(z, suvy)/sum( dn_dz(z, suvy)*dz )
+        return wg
     else:
         wg = b(z,suvy) * dn_dz(z, suvy)/sum( dn_dz(z, suvy)*dz )
         return wg
@@ -375,6 +419,62 @@ def Wi(z, suvy):
 
 def Wk(z):
     return 3 * omega_m / 2 / c * H(0)**2 / H(z) *(1 + z)**1 * chis * (chistar - chis) / chistar
+
+def Cb_lens(l):
+    s2 = 0
+    lx = l * np.cos(np.pi/4)
+    ly = l * np.sin(np.pi/4)
+    print 
+    for xi in range(-3000, 3001, 10):
+        for yi in range(-3000, 3001, 10):
+            d1 = ((xi-lx)**2 + (yi-ly)**2)**0.5
+            d2 = (xi**2 + yi**2)**0.5
+            d3 = l
+            if d1 >= 2 and d2 >= 2: 
+                if d1<=3000 and d2 <=3000:
+                    cosphi = (xi * lx + yi * ly) / d3 / d2
+                    sin2phi = 2 * cosphi * abs((1 - cosphi**2))**0.5
+                    wll = 2 * ((lx-xi)*xi + (ly-yi)*yi) / d1**2 * sin2phi
+                    d1 = int(d1); d2 = int(d2); d3 = int(d3)
+                    tn2 = wll**2 * ce[d2] * cl_camb_b[d1] / (2 * np.pi)**2
+                    s2 += tn2
+            else:
+                tn = 0
+    s2 = s2*100
+    return s2
+
+def Cb_res(l, rho_list):
+    s = np.zeros(rho_list.shape[0])
+    s2 = 0
+    lx = l * np.cos(np.pi/4)
+    ly = l * np.sin(np.pi/4)
+    print 
+    for xi in range(-3000, 3001, 10):
+        for yi in range(-3000, 3001, 10):
+            d1 = ((xi-lx)**2 + (yi-ly)**2)**0.5
+            d2 = (xi**2 + yi**2)**0.5
+            d3 = l
+            if d1 >= 2 and d2 >= 2: 
+                if d1<=3000 and d2 <=3000:
+                    cosphi = (xi * lx + yi * ly) / d3 / d2
+                    sin2phi = 2 * cosphi * abs((1 - cosphi**2))**0.5
+                    wll = 2 * ((lx-xi)*xi + (ly-yi)*yi) / d1**2 * sin2phi
+                    d1 = int(d1); d2 = int(d2); d3 = int(d3)
+                    tn2 = wll**2 * ce[d2] * cl_camb_b[d1] / (2 * np.pi)**2
+                    s2 += tn2
+  #                  if math.isnan(tn2):
+#                        print 'xi',xi,'yi',yi
+ #                       print 'cos', cosphi, 'sin2phi', sin2phi
+                    for i, rhoi in enumerate(rho_list):
+                        tn = wll**2 * ce[d2] * cl_camb_b[d1] * (1 - (ce[d2] / ce[d2]) * (rhoi[d1-2])**2) / (2 * np.pi)**2
+                        s[i] += tn
+                        #                    print 'tn',tn
+            else:
+                tn = 0
+    s = s*100
+    s2 = s2*100
+    return s, s2
+
 
 def f_mu(z):
     muz = mu * (1+z)
@@ -418,6 +518,11 @@ def spt_ns(lx, ly):
 def n_fwhm(l):
     a = 1/1.2 * 1e-7* np.exp( l**2 * 1**2 * (3e-4)**2/ 2.355**2 )*25
     return a
+def ns_lsst(wi, wni, wnj):
+    wnij = np.maximum(wni, wnj)
+    pct = sum(wnij) / sum(sum(wi))
+#    print 'pct', pct
+    return pct
 
 def noise_t(lx,ly):
     s = 0
@@ -532,10 +637,10 @@ def P(zs, k):
 
 
 survey_list = ['DESI', 'WISE', 'LSST', 'CIB', 'SPT', 'DES', 'WISE x SCOS']
-comb2 = list(combinations(['DESI', 'WISE', 'LSST', 'CIB', 'SPT', 'DES', 'WISE x SCOS'], 2))
-comb3 = list(combinations(['DESI', 'WISE', 'LSST', 'CIB', 'SPT', 'DES', 'WISE x SCOS'], 3))
+comb2 = list(combinations(survey_list, 2))
+#comb3 = list(combinations(['DESI', 'WISE', 'LSST', 'CIB', 'SPT', 'DES', 'WISE x SCOS'], 3))
+comb3 = list(combinations(survey_list, 3))
 survey_tomog_list = ['LSST tomographic', 'DES tomographic']
-#legd1 = ['DESI','WISE','LSST','SPT','CIB pln','DES','WISE x SCOS']
 legd1 = []
 legd2 = []
 legd3 = []
@@ -566,6 +671,11 @@ rho_double = np.zeros(( len(ls), len(comb2) ))
 rho_triple = np.zeros(( len(ls), len(comb3) ))
 rho_tomog = np.zeros(( len(ls), len(survey_tomog_list) ))
 
+cbres = np.zeros(( len(ls), len(survey_list)))
+cblens = np.zeros(len(ls))
+llcbres = np.zeros(( len(ls), len(survey_list)))
+llcblens = np.zeros(len(ls))
+
 spt_nseb = np.zeros(ls.shape)
 ckk = np.zeros(ls.shape)
 
@@ -585,7 +695,7 @@ for i, li in enumerate(ls):
     ckk[i] = C_kk(li,'CIB') 
 
     for j, survey in enumerate(survey_list):
-        if j == 4:
+        if survey == 'SPT':
             cki[i][j] = ckk[i]
             cii[i][j] = ckk[i] + spt_nseb[i]
         else:
@@ -614,12 +724,21 @@ for i, li in enumerate(ls):
         
     for j , surveys in enumerate(survey_tomog_list):
         rho_tomog [i][j] = tomog_rho(li, surveys)
-            
+    
+#    s, s2 = Cb_res(li, rho_long)
+    s2 = Cb_lens(li)
+#    cbres[i,:] = s
+    llcbres[i,:] = cbres[i,:]*li*(li+1)/2/np.pi
+ #   print 's', s
+    print 'cbb len', s2
+    cblens[i] = s2
+    llcblens[i] = s2*li*(li+1)/2/np.pi
+
     end = datetime.datetime.now()
     print (end-start)
 
 ckk = ckk.reshape((len(ls), 1))
-print ckk.shape
+
 rho = cki / (cii * ckk)**0.5
 rho0 = rho[:, 0]
 rho1 = rho[:, 1]
@@ -629,6 +748,14 @@ rho4 = rho[:, 4]
 rho5 = rho[:, 5]
 rho6 = rho[:, 6]
 
+cbres0 = cbres[:, 0]
+cbres1 = cbres[:, 1]
+cbres2 = cbres[:, 2]
+cbres3 = cbres[:, 3]
+cbres4 = cbres[:, 4]
+cbres5 = cbres[:, 5]
+cbres6 = cbres[:, 6]
+
 data = np.column_stack((ls, rho0, rho1, rho2, rho3, rho4, rho5, rho6))
 header = "ls, DESI, WISE, LSST, CIB, rho_spt, DES, WISE x SCOS"
 np.savetxt('rho_single_gener.dat', data, header=header)
@@ -637,12 +764,16 @@ spteb = np.column_stack((ls, spt_nseb))
 header = "ls, spt_nseb"
 np.savetxt('spt_eb_gener.dat', spteb, header=header)
 
+cbbdata = np.column_stack((ls, cbres0, cbres1, cbres2, cbres3, cbres4, cbres5, cbres6, cblens))
+header = "ls, DESI, WISE, LSST, CIB, rho_spt, DES, WISE x SCOS, CBB_lense"
+np.savetxt('cbb_data2.dat', cbbdata, header=header)
+
 wi_z = zs
 w0 = Wi(wi_z, 'DESI')
 w1 = Wi(wi_z, 'WISE')
 w2 = Wi(wi_z, 'LSST')
 w2t = Wi(wi_z, 'LSST tomographic')
-w3 = Wi(wi_z, 'CIB')
+w3 = Wi(wi_z, 'CIB_2')
 w4 = Wi(wi_z, 'DES')
 w4t = Wi(wi_z, 'DES tomographic')
 w5 = Wi(wi_z, 'WISE x SCOS')
@@ -655,8 +786,20 @@ plt.plot(wi_z, w3)
 plt.plot(wi_z, w4)
 plt.plot(wi_z, w5)
 plt.xlim([0,4.5])
-plt.legend(['DESI','WISE','LSST','CIB','DES','WISE x SCOS'])
+plt.legend(['DESI','WISE','LSST','CIB_2','DES','WISE x SCOS'])
 plt.savefig('weight.png')
+
+plt.figure(figsize = (8,5))        
+dnledg = []
+for survey in survey_list:
+    if survey != 'SPT':
+        dndzi = dn_dz(wi_z, survey)
+        dndzi /= sum(dndzi)
+        plt.plot(wi_z, dndzi)
+        dnledg.append(survey)
+plt.xlim([0,4.5])
+plt.legend(dnledg)
+plt.savefig('dndz.png')
 
 plt.figure(figsize = (8,5))       
 plt.plot(wi_z, w2, linewidth = 2, color = 'r')
@@ -693,8 +836,8 @@ plt.ylabel('rho tomographic')
 plt.legend(legd4 + ['LSST','DES'])
 plt.savefig('rho_tomog.png')
 
-plt.rc('text', usetex=True)
-plt.rc('font', family='serif')
+#plt.rc('text', usetex=True)
+#plt.rc('font', family='serif')
          
 plt.figure(figsize = (8,5))        
 for i, survey in enumerate(survey_list):
@@ -724,7 +867,7 @@ plt.xlabel('l')
 plt.ylabel('rho double')
 plt.legend(legd1 + legd2)
 #plt.legend(['WISE + LSST','WISE + CIB','WISE + SPT', 'WISE + DES', 'WISE+WISExSCOS','SPT + DES','SPT + WISExSCOS','DES+WISExSCOS','LSST + CIB','LSST + SPT','LSST + DES', 'LSST+WISExSCOS','CIB + SPT', 'CIB + DES', 'CIB+WISExSCOS'])
-plt.savefig('rho_comb2.png')
+plt.savefig('rho_comb2_cib2.png')
 
 plt.figure(figsize = (24,15))        
 for i, survey in enumerate(survey_list):
@@ -744,5 +887,29 @@ plt.xlabel('l')
 plt.ylabel('rho triple')
 plt.title('rho 3 tracers')
 plt.legend( legd1 + legd3 ) 
-plt.savefig('rho_comb3.png')
+plt.savefig('rho_comb3_cib2.png')
 
+plt.figure(figsize = (16,10))        
+for i, survey in enumerate(survey_list):
+    plt.loglog(ls, llcbres[:,i], linestyle = '--')
+plt.loglog(ls, llcblens)
+plt.xlim([10,ls[-1]])
+plt.xlabel('l')
+plt.ylabel('llcbb')
+plt.title('cbb res and cbb lens')
+plt.legend( ['Cbb_' + s for s in legd1] + ['Cbb_len'] ) 
+plt.savefig('cbb_log.png')
+
+plt.figure(figsize = (8,5))        
+cibid = survey_list.index( 'CIB' )
+cibdes = comb2.index(('CIB', 'DES'))
+cibdesscos = comb3.index(('CIB', 'DES', 'WISE x SCOS'))
+plt.plot(ls, rho[:, cibid])
+plt.plot(ls, rho_double[:, cibdes])
+plt.plot(ls, rho_triple[:, cibdesscos])
+plt.xlim([1,ls[-1]])
+plt.ylim([0,1])
+plt.xlabel('l')
+plt.ylabel('rho')
+plt.legend( ['CIB', 'CIB + DES', 'CIB + DES + WISE x SCOS'] ) 
+plt.savefig('cib_comb.png')
