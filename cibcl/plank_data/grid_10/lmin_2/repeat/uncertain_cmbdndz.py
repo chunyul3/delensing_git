@@ -1,0 +1,337 @@
+#############################################################
+#this coude is about a figure. Which involve DES, WIDE, CIB, SPT, LSSS.
+#For DES, WISE the W is Wg. which coresonging to different i.
+#For C_kk the W is Wk
+##############################################################
+import numpy as np
+#import pandas as pd
+import math
+import scipy.integrate as integrate
+from scipy.integrate import quad
+from scipy import special
+import scipy.special as special
+import camb
+from camb import model, initialpower
+from camb import get_matter_power_interpolator
+import sys, platform, os
+import matplotlib
+matplotlib.use("agg")
+from matplotlib import pyplot as plt
+from matplotlib import rc
+from scipy.optimize import leastsq
+from scipy import interpolate 
+from scipy.interpolate import interp1d
+from scipy.integrate import dblquad
+import datetime
+from decimal import Decimal
+from itertools import combinations, permutations
+from tempfile import TemporaryFile
+outfile = TemporaryFile()
+from rho_fun import rho_generate
+
+##### DEFINE PARAMETERS
+
+h = 0.675
+nz = 100 #number of steps to use for the radial/redshift integration
+kmax=10  #kmax to use
+omega_m = 0.27
+c = 1
+beta_cib = 2
+bc = 1
+sigma_z = 2
+zc = 2
+alpha_lsst, beta_lsst = 1.27, 1.02
+T = 34 # k
+mu = 4955
+h_p = 6.63 * 10**(-34) #j*s
+k_b = 1.38 * 10**(-23) #j/k
+mup = 4.955 * 10**12 #s**-1
+mu = 0.545*10**12
+dl_intg = 100
+
+
+
+data = np.loadtxt('/home/chunyul3/quicklens/noise_deep_wide_re.dat')
+cmbls = data[:,0]
+print 'cmbls'
+print cmbls
+cmbnoise = [data[:,1], data[:,2]]
+
+cmbs4_list = ['deep','wide']
+
+cmbrhos = [0,0]
+
+ckkcmb = np.zeros(len(cmbls))
+
+for i in range(len(cmbls)):
+    ckkcmb[i] = rho_generate.C_kk(cmbls[i],'CIB') 
+
+
+for i in range(len(cmbnoise)):
+    cmbrhossq = ckkcmb / ( ckkcmb + cmbnoise[i] * 2 * np.pi / 4 )
+    cmbrhos[i] = cmbrhossq**0.5        
+
+
+data = np.loadtxt('/home/chunyul3/delensing_git/data_input/cmb_tot.dat')
+ct_l = data[:, 0]
+ct_tot = data[:, 1]
+ce_tot = data[:, 2]
+cb_tot = data[:, 3]
+cte_tot = data[:, 4]
+
+data2 = np.loadtxt('/home/chunyul3/delensing_git/data_input/cmb.dat')
+ct_l = data2[:, 0]
+ct = data2[:, 1]
+ce = data2[:, 2]
+cb = data2[:, 3]
+cte = data2[:, 4]
+zeros = np.zeros(10000)
+ct = np.append(ct, zeros)
+ct_tot = np.append(ct_tot, zeros)
+ce = np.append(ce, zeros)
+ce_tot = np.append(ce_tot, zeros)
+cb = np.append(cb, zeros)
+cb_tot = np.append(cb_tot, zeros)
+cte = np.append(cte, zeros)
+cte_tot = np.append(cte_tot, zeros)
+
+########################### input noise
+
+nfwhm_cmbs4_95 = rho_generate.n_fwhm(ct_l, 0.68, 2)
+nfwhm_cmbs4_145 = rho_generate.n_fwhm(ct_l, 0.96, 2)
+nfwhm_cmbs4_cob = 1 / ( 1/nfwhm_cmbs4_95 + 1/nfwhm_cmbs4_145)
+
+nfwhm_cmbs4_95_wide = rho_generate.n_fwhm(ct_l, 2.0, 2.0)
+nfwhm_cmbs4_145_wide = rho_generate.n_fwhm(ct_l, 2.0, 2.0)
+nfwhm_cmbs4_cob_wide = 1 / ( 1/nfwhm_cmbs4_95_wide + 1/nfwhm_cmbs4_145_wide)
+
+noise_cmbsurvey = np.column_stack((nfwhm_cmbs4_cob, nfwhm_cmbs4_cob_wide))
+
+ce_noise = nfwhm_cmbs4_cob_wide
+
+##################  START THE CAMB CLACULATION
+
+pars = camb.CAMBparams()
+pars.set_cosmology(H0=67.5, ombh2=0.022, omch2=0.122)
+pars.InitPower.set_params(ns=0.965)
+pars.set_for_lmax(12000, lens_potential_accuracy=0)
+results= camb.get_results(pars)
+powers = results.get_cmb_power_spectra(pars,  lmax = 6100,CMB_unit='muK')
+totCL=powers['total']
+unlensedCL=powers['unlensed_scalar']
+
+#chistar = results.conformal_time(0)- results.tau_maxvis
+chistar = results.conformal_time(0)- results.conformal_time(1090)
+chis = np.linspace(0,chistar,nz)
+zs=results.redshift_at_comoving_radial_distance(chis)
+
+dchis = (chis[2:]-chis[:-2])/2
+chis = chis[1:-1]
+#print chis
+dz = (zs[2:]-zs[:-2])/2
+zs = zs[1:-1]
+w = np.ones(chis.shape)
+
+
+PK = camb.get_matter_power_interpolator(pars, nonlinear=True, 
+    hubble_units=False, k_hunit=False, kmax=kmax,
+    var1=model.Transfer_Weyl,var2=model.Transfer_Weyl, zmax=zs[-1])
+cl_camb = results.get_lens_potential_cls(12000)
+cl_camb_b = cl_camb[:, 0]
+print 'len cl_camb_b', len(cl_camb_b)
+
+
+##################### START THE DEFINITION OF THE FUNCTIONS
+
+def Cb_lens(l):
+    s2 = 0
+    lx = l * np.cos(np.pi/4)
+    ly = l * np.sin(np.pi/4)
+    for xi in range(-3000, 3001, 10):
+        for yi in range(-3000, 3001, 10):
+            d1 = ((xi-lx)**2 + (yi-ly)**2)**0.5
+            d2 = (xi**2 + yi**2)**0.5
+            d3 = l
+            if d1 >= 2 and d2 >= 2: 
+                if d1<=3000 and d2 <=3000:
+                    cosphi = (xi * lx + yi * ly) / d3 / d2
+                    sin2phi = 2 * cosphi * abs((1 - cosphi**2))**0.5
+                    wll = 2 * ((lx-xi)*xi + (ly-yi)*yi) / d1**2 * sin2phi
+                    d1 = int(d1); d2 = int(d2); d3 = int(d3)
+                    tn2 = wll**2 * ce[d2] * cl_camb_b[d1] / (2 * np.pi)**2
+                    s2 += tn2
+            else:
+                tn = 0
+    s2 = s2*100
+    return s2
+
+def Cb_res(l, rho, noise):
+    s2 = 0
+    s = 0
+    lx = l * np.cos(np.pi/4)
+    ly = l * np.sin(np.pi/4)
+    for xi in range(-3000, 3001, 10):
+        for yi in range(-3000, 3001, 10):
+            d1 = ((xi-lx)**2 + (yi-ly)**2)**0.5
+            d2 = (xi**2 + yi**2)**0.5
+            d3 = l
+            if d1 >= 2 and d2 >= 2: 
+                if d1<=3000 and d2 <=3000:
+                    cosphi = (xi * lx + yi * ly) / d3 / d2
+                    sin2phi = 2 * cosphi * abs((1 - cosphi**2))**0.5
+                    wll = 2 * ((lx-xi)*xi + (ly-yi)*yi) / d1**2 * sin2phi
+                    d1 = int(d1); d2 = int(d2); d3 = int(d3)
+                    tn2 = wll**2 * ce[d2] * cl_camb_b[d1] / (2 * np.pi)**2
+                    s2 += tn2
+                    rhoi = rho
+                    tn = tn2 * (1 - ce[d2] / (ce[d2] + noise[d2]) * rho[d1-2]**2 ) 
+                    s += tn
+            else:
+                tn = 0
+    s = s*10**2
+    s2 = s2*10**2
+    return s, s2
+
+
+############# Calculate Input Rho
+
+cmbrhositp = range(len(cmbrhos))
+rho_ls_long = np.arange(2, cmbls[-1] + 1)
+
+print 'rho_ls_long'
+print rho_ls_long
+
+mu_gaussian_list = np.arange(1, 3.01, 0.5)
+sigma_gaussian_list = np.array([0.15, 0.5, 0.75, 1, 1.25, 1.5, 1.75])
+
+len_mu = len(mu_gaussian_list)
+len_sigma = len(sigma_gaussian_list)
+
+number = len_mu * len_sigma
+
+wi_list = np.zeros(( len_mu, len_sigma, len(zs)))
+rhos_combine = np.zeros((len(mu_gaussian_list), len(sigma_gaussian_list), len(rho_ls_long)))
+cki = np.zeros((len(mu_gaussian_list), len(sigma_gaussian_list), len(rho_ls_long)))
+cii = np.zeros((len(mu_gaussian_list), len(sigma_gaussian_list), len(rho_ls_long)))
+ckk = np.zeros(len(rho_ls_long))
+
+for i, mui in enumerate(mu_gaussian_list):
+    for j, sigmaj in enumerate(sigma_gaussian_list):
+        for k in range(len(rho_ls_long)):
+            cki[i,j,k] = rho_generate.C_ki(rho_ls_long[k],'Gaussian', mui, sigmaj) 
+            cii[i,j,k] = rho_generate.C_ii(rho_ls_long[k],'Gaussian', mui, sigmaj) 
+
+for i, mui in enumerate(mu_gaussian_list):    
+    for j, sigmaj in enumerate(sigma_gaussian_list):
+        wi_list[i, j] = rho_generate.Wi(zs, 'Gaussian', mui, sigmaj)
+
+for i in range(len(rho_ls_long)):
+    ckk[i] = rho_generate.C_kk(rho_ls_long[i],'CIB') 
+
+rhos_gaussian = cki / (ckk * cii)**0.5
+
+print 'cki',cki
+print 'cii',cii
+print 'ckk',ckk
+
+
+for i, mui in enumerate(mu_gaussian_list):
+    for j, sigmaj in enumerate(sigma_gaussian_list):
+        for k in range(len(rho_ls_long)):
+            rhos_combine[i,j,k] = rho_generate.cross_rho2(rho_ls_long[k], ckk[k] + cmbnoise[1][k+2], cki[i,j,k], cki[i,j,k], cii[i,j,k], ckk[k], cki[i,j,k])
+
+
+# Plot rho
+fig, axs = plt.subplots( len_mu, len_sigma, figsize = ( len_sigma*3 ,len_mu*3) )
+fig.subplots_adjust(hspace = .5, wspace=.001)
+axs = axs.ravel()
+count = 0
+
+for i in range(len_mu):
+    for j in range(len_sigma):
+        axs[count].plot(rho_ls_long, rhos_gaussian[i,j])
+        axs[count].plot(rho_ls_long, rhos_combine[i,j])
+        axs[count].plot(cmbls, cmbrhos[1])
+        mustr = '%.2f' % mu_gaussian_list[i]
+        sigstr = '%.2f' % sigma_gaussian_list[j]
+        title = 'mu: ' + mustr + ', sigma: ' + sigstr
+        axs[count].set_title(title)
+        axs[count].set_ylim([0, 1])
+        axs[count].set_ylabel('rho')
+        axs[count].set_xlabel('l')
+#        axs[count].legend(['rho gaussian','rho combine'])
+        count = count + 1
+plt.savefig('rhos_combine_wide.png')
+
+
+############## CALCULATE THE CMB SURVEY BRES
+
+ls_cres = np.arange(1,2000+1,100) ##remember!!!!!!
+cblens = np.zeros(len(ls_cres))
+cbres = np.zeros(len(ls_cres))
+llcblens = np.zeros(len(ls_cres))
+cbres_gauss = np.zeros(( number, len(ls_cres)))
+cbres_gausscmb = np.zeros(( number, len(ls_cres)))
+
+count = 0
+for i in range(len_mu):
+    for j in range(len_sigma):
+        start = datetime.datetime.now()
+        n1 = noise_cmbsurvey[:,1]
+        n1 = n1 * 2
+        print i, ' of ', len_mu, ' mu '
+        print j, ' of ', len_sigma, ' sigma '
+        for ind, li in enumerate(ls_cres):
+            s, s2 = Cb_res(li, rhos_gaussian[i,j], n1)
+            cbres_gauss[ count ][ ind ] = s
+            cblens[ind] = s2
+            s, s2 = Cb_res(li, rhos_combine[i,j], n1)
+            cbres_gausscmb[ count ][ ind ] = s
+        end = datetime.datetime.now()
+        count = count + 1
+        print (end-start)
+
+for ind, li in enumerate(ls_cres):
+    n1 = noise_cmbsurvey[:,1]
+    n1 = n1 * 2
+    s, s2 = Cb_res(li, cmbrhos[1][2:], n1)
+    cbres[ind ] = s
+    cblens[ind] = s2
+
+data = ls_cres
+data = np.column_stack((data, cblens, cbres))
+for i, bres in enumerate(cbres_gauss):    
+    data = np.column_stack((data, bres))
+header = "ls, cblens, cbrescmbs4_wide, different mu, sigma, mu_gaussian_list = np.arange(1, 3.01, 0.5), sigma_gaussian_list = np.array([0.15, 0.5, 0.75, 1, 1.25, 1.5, 1.75])"
+np.savetxt('cbres_gaussian_wide.dat', data, header=header, fmt='%.6f')
+
+data = ls_cres
+data = np.column_stack((data, cblens, cbres))
+for i, bres in enumerate(cbres_gausscmb):    
+    data = np.column_stack((data, bres))
+header = "ls, cblens, cbrescmbs4_wide, different mu, sigma, mu_gaussian_list = np.arange(1, 3.01, 0.5), sigma_gaussian_list = np.array([0.15, 0.5, 0.75, 1, 1.25, 1.5, 1.75]) combined with cmbs4 wide survey"
+np.savetxt('cbres_gaussian_comb_wide.dat', data, header=header, fmt = '%.6f')
+
+############# PLOT
+
+fig, axs = plt.subplots( len_mu, len_sigma, figsize = ( len_sigma*3 ,len_mu*3) )
+fig.subplots_adjust(hspace = .5, wspace=.001)
+axs = axs.ravel()
+count = 0
+for i in range(len_mu):
+    for j in range(len_sigma):
+        axs[count].plot(ls_cres, cbres_gauss[count] / cblens)
+        axs[count].plot(ls_cres, cbres_gausscmb[count] / cblens)
+        axs[count].plot(ls_cres, cbres / cblens)
+        mustr = '%.2f' % mu_gaussian_list[i]
+        sigstr = '%.2f' % sigma_gaussian_list[j]
+        title = 'mu: ' + mustr + ', sigma: ' + sigstr
+        axs[count].set_title(title)
+        axs[count].set_ylim([0, 1])
+        axs[count].set_ylabel('bres')
+        axs[count].set_xlabel('l')
+#        axs[count].legend(['rho gaussian','rho combine'])
+        count = count + 1
+
+plt.savefig('bres_gaussian_comb_wide.png')
+
